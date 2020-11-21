@@ -1,0 +1,4 @@
+To do:
+Normal terminationの確認
+可変バネ定数の実装
+restart機能
