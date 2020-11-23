@@ -28,11 +28,11 @@ def main(file):
     calcio = ns.GaussianIO(calc)
 
     # default values
-    inter=10
+    inter = 10
     init = 'linear'
 
     # read NEB option
-    options = re.findall(r'inter=(\d+)|init=(ldpp|linear)|', neb_opt, re.IGNORECASE)
+    options = re.findall(r'inter=(\d+)|init=(idpp|linear)|', neb_opt, re.IGNORECASE)
     if options:
         for option in options:
             if option[0] != '':
@@ -58,9 +58,9 @@ def main(file):
         mol_beads.append(ns.Molecule(mol, 'int_' + str(k + 1), cm))
     mol_beads.append(mol_end)
 
-    # ldpp initial structure generation
-    if init == 'ldpp':
-        ns.PathOptimization(mol_beads, ns.NEB(0.02, 'org'), calcio).optimize_ldpp()
+    # initial structure optimization by idpp
+    if init == 'idpp':
+        ns.PathOptimization(mol_beads, ns.NEB(0.02, 'org'), calcio).optimize_idpp()
 
     # write the gjf file
     calcio.write_com('trial', mol_beads[1].pybelobj, mol_beads[1].cm)

@@ -8,6 +8,11 @@ from openbabel import openbabel as ob
 from openbabel import pybel
 
 
+# Copyright (c) 2020 yumn-dfx
+# This software is released under the MIT License.
+# https://opensource.org/licenses/mit-license.php
+
+
 class CalcMethods:
     def __init__(self, chkdir='', link='', root='# b3lyp/6-31G*', addsec=''):
         self.chkdir = chkdir
@@ -27,7 +32,7 @@ class Molecule:
 
 
 class GaussianIO:
-    # change the following value to 'g16' if you want to run Gaussian 16
+    # change the following value to 'g16' if you want to run with Gaussian 16
     gau_cmd = 'g09'
 
     def __init__(self, method=CalcMethods()):
@@ -235,7 +240,7 @@ class InitStructure:
         return int_list
 
     @staticmethod
-    def update_ldpp_force(mol: Molecule, dist_matrix):
+    def update_idpp_force(mol: Molecule, dist_matrix):
         diff = []
         for i, atom_i in enumerate(mol.pybelobj.atoms):
             force_x = 0.0
@@ -264,8 +269,8 @@ class OptimizationMethod(metaclass=ABCMeta):
 
 class FIRE(OptimizationMethod):
     # fixed parameters for fire algorithm
-    # parameters from PRL 2006
-    dt_max = 0.3
+    # parameters from PRL 2006, 97, 170201 and dt and dt_max was modified based on a calculation
+    dt_max = 1
     n_acc = 5
     f_inc = 1.1
     f_acc = 0.99
@@ -274,7 +279,7 @@ class FIRE(OptimizationMethod):
 
     def __init__(self, dim):
         # valuable parameters during optimization
-        self.dt = 0.1
+        self.dt = 0.3
         self.a = 0.1
         self.n_prop = 0
         self.v = np.zeros(dim)
@@ -286,6 +291,7 @@ class FIRE(OptimizationMethod):
         if xmax > maxmove:
             step = maxmove / xmax
             dx = step * dx
+            self.v = step * self.v
         return dx
 
     def dx_opt(self, force, maxmove=0.2):
@@ -306,6 +312,7 @@ class FIRE(OptimizationMethod):
         if xmax > maxmove:
             step = maxmove / xmax
             dx = step * dx
+            self.v = step * self.v
         return dx
 
 
@@ -362,40 +369,36 @@ class PathOptimization:
             image.position = np.array([atom.coords for atom in image.pybelobj.atoms]).flatten()
 
     def write_energy(self, file):
-        # change directory
+        # change directory and write energy to result.csv
         os.chdir('..')
-
         with open(file, mode='a') as fr:
             fr.write(
                 '{0},{1},{2}\n'.format(str(self.step), ','.join([str(i.energy) for i in self.images]), str(self.rms)))
 
-        # change directory
+        # change to working directory
         os.chdir('temp')
 
     def write_molecules(self):
-        # change directory
+        # change directory and create xyz file
         os.chdir('..')
-
         outstream = pybel.Outputfile("xyz", "path" + str(self.step) + ".xyz")
         for mol in self.images:
             mol.pybelobj.OBMol.SetTitle(mol.name + " Energy=" + str(mol.energy))
             outstream.write(mol.pybelobj)
         outstream.close()
 
-        # change directory
+        # change to working directory
         os.chdir('temp')
 
     def optimize(self, maxiter, threshold, method: OptimizationMethod):
-        # change directory
+        # change directory and initialize result file
         os.chdir('..')
-
-        # initialize result file
         result_file = 'result.csv'
         with open(result_file, mode='w') as fr:
             fr.write('step,start,{0},end,rms_force\n'.format(
                 ','.join(['int_' + str(i + 1) for i in range(len(self.images) - 2)])))
 
-        # change directory
+        # change to working directory
         os.chdir('temp')
 
         while self.step != maxiter:
@@ -425,7 +428,7 @@ class PathOptimization:
 
         return False
 
-    def optimize_ldpp(self):
+    def optimize_idpp(self):
         # value
         maxiter = 200
         threshold = 0.02
@@ -442,7 +445,7 @@ class PathOptimization:
 
         while self.step != maxiter:
             for mol, dm in zip(self.images[1:-1], dm_int):
-                InitStructure.update_ldpp_force(mol, dm)
+                InitStructure.update_idpp_force(mol, dm)
             nebforce = self.neb.nebforce(self.images)
             self.rms = np.sqrt(np.mean(nebforce ** 2))
             print(str(self.rms))
@@ -484,7 +487,7 @@ def main(file):
     inter = 10
     max_iter = 20
     spring = 0.02  # unit: Hartree / Bohr^2
-    conv_threshold = 0.0003
+    conv_threshold = 0.001
     neb = 'reg'
     init = 'linear'
     ci = False
@@ -492,7 +495,7 @@ def main(file):
 
     # read NEB option
     options = re.findall(
-        r'inter=(\d+)|maxiter=(\d+)|spring=(\d+)|conv=(\d+)|neb=(reg|org|ci-eb)|init=(ldpp|linear)|(ci)|opt=(BFGS|FIRE)',
+        r'inter=(\d+)|maxiter=(\d+)|spring=(\d+)|conv=(\d+)|neb=(reg|org|ci-eb)|init=(idpp|linear)|(ci)|opt=(BFGS|FIRE)',
         neb_opt, re.IGNORECASE)
     if options:
         for option in options:
@@ -534,11 +537,11 @@ def main(file):
         mol_beads.append(Molecule(mol, 'int_' + str(k + 1), cm))
     mol_beads.append(mol_end)
 
-    # initial structure optimization by ldpp
-    if init == 'ldpp':
-        PathOptimization(mol_beads, NEB(0.02, 'org'), calcio).optimize_ldpp()
+    # initial structure optimization by idpp
+    if init == 'idpp':
+        PathOptimization(mol_beads, NEB(0.02, 'org'), calcio).optimize_idpp()
 
-    # create working directory and change dir
+    # create working directory and go into it
     os.mkdir('temp')
     os.chdir('temp')
 
